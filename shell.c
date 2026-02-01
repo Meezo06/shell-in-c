@@ -1,113 +1,139 @@
 #include <stdio.h>
-#include <dirent.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
-#define BUFF_SIZE 1024
+#include <dirent.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <stdbool.h>
 
-DIR *dir;
-char *curr_dir;
-char *command = NULL;
-char **args = NULL;
+const char* const comms[] = {
+	"exit", "echo", "type", "pwd", "cd"
+};
 
-void command_map(const char *comm);
-void get_comm_and_args(const char *buff);
+const unsigned short ARGS_LEN = 50;
+const unsigned short PATHS_LEN = 512;
 
-int main(int argc, char **argv) {
-
-    if (argc != 2) {
-        fprintf(stderr, "Wrong format. Usage: ./shell [starting directory]\n");
-        return 1;
-    }
-
-    dir = opendir(argv[1]);
-
-    // check if directory exists
-    if (!dir) {
-        closedir(dir);
-        fprintf(stderr, "Error: Starting directory is not found\n");
-        return 2;
-    }
-
-    curr_dir = argv[1];
-    char *line = malloc(BUFF_SIZE);
-    if (!line) {
-        fprintf(stderr, "Shell: malloc failed\n");
-        closedir(dir);
-        return 3;
-    }
+void echo(const char* const args[]);
+char* type(const char* const comm, bool show);
+bool execute(const char* const args[]);
+void cd(char* const dir, char* cwd);
 
 
-    while (1) {
-        printf("%s$ ", curr_dir);
-        fflush(stdout);
+int main(int argc, char *argv[]) {
+	// Flush after every printf
+	setbuf(stdout, NULL);
+	char *cwd = malloc(PATHS_LEN);
+	getcwd(cwd, PATHS_LEN);
 
-        if (fgets(line, BUFF_SIZE, stdin) == NULL) { /* EOF or error */
-            if (feof(stdin)) putchar('\n'); /* nice newline on Ctrl-D */
-            break;
-        }
 
-        /* strip trailing newline */
-        line[strcspn(line, "\n")] = '\0';
+	while (1) {
+		printf("$ ");
+		char line[4096];
+		char* command;
+		char* args[ARGS_LEN];
+		fgets(line, 4096, stdin);
+		line[strcspn(line, "\n")] = '\0';
+		command = strtok(line, " ");
+		args[0] = command;
+		int i = 1;
+		while (i < ARGS_LEN && args[i - 1] != NULL) args[i++] = strtok(NULL, " "); 
+		if (strcmp(command, "exit") == 0) break;
+		else if (strcmp(command, "echo") == 0) echo((const char * const *)args);
+		else if (strcmp(command, "type") == 0) type(args[1], true);
+		else if (strcmp(command, "pwd") == 0) puts(cwd);
+		else if (strcmp(command, "cd") == 0) cd(args[1], cwd);
+		else {
+			bool status = execute((const char * const*)args);
+			if (!status) printf("%s: command not found\n", command);
+		}
+	}
 
-        get_comm_and_args(line);
-
-        if (line[0] == '\0' || !command) continue;     /* empty line -> prompt again */
-        if (strcmp(command, "exit") == 0) break;
-        command_map(command);
-        
-    }
-
-    free(line);
-    free(command);
-    free(args);
-    free(curr_dir);
-    closedir(dir);
-
-    return 0;
+	return 0;
 }
 
-void command_map(const char *comm) {
-    if (!strcmp(comm, "cd")) change_dir();
+void echo(const char* const args[]) {
+	for(int i = 1; args[i] != NULL; i++) printf("%s ", args[i]);
+	putc('\n', stdout);
 }
 
-void get_comm_and_args(const char *buff) {
-    
-    if (buff == NULL) return;
+char* type(const char const *comm, bool show) {
+	unsigned short comms_len = sizeof(comms) / sizeof(comms[0]);
+	for (int i = 0; i < comms_len; i++) {
+		if (strcmp(comms[i], comm) == 0) {
+			printf("%s is a shell builtin\n", comm);
+			return NULL;
+		}
+	}
+	char *PATH = strdup(getenv("PATH"));
+	const char *del = ":";
+	char *full_path = malloc(PATHS_LEN);
+	if (full_path == NULL) return NULL;
+	for (char *dir = strtok(PATH, del); dir != NULL; dir = strtok(NULL, del)) {
+		DIR *curr_dir = opendir(dir);
+		if (curr_dir == NULL) continue;
+		struct dirent *file;
+		while ((file = readdir(curr_dir)) != NULL) {
+			snprintf(full_path, PATHS_LEN, "%s/%s", dir, file->d_name);
+			if (file->d_type == DT_REG
+			&& strcmp(file->d_name, comm) == 0
+			&& access(full_path, X_OK) == 0)
+			{        		
+				if (show) {
+					printf("%s is %s\n", comm, full_path);
+					free(full_path);
+				} 
+				free(PATH);
+				return full_path;
+			}
+		}
+		closedir(curr_dir);
+	}
+	if (show) printf("%s: not found\n", comm);
+	free(PATH);
+	return NULL;
+}
 
-    const char *start, *end;
+void cd(char* const dir, char* cwd) {
+	const char* home = getenv("HOME");
+	char dir_full_path[PATHS_LEN];
+	DIR *dir_f;
+	if (*dir != '/') {
+		if (*dir == '~') {
+			strcpy(dir_full_path, home);
+			strcat(dir_full_path, dir + 1);
+		} 
+		else snprintf(dir_full_path, PATHS_LEN, "%s/%s", cwd, dir);
+	}
+	else strcpy(dir_full_path, dir);
+	realpath(dir_full_path, dir_full_path);
+	dir_f = opendir(dir_full_path);
+	if (dir_f == NULL) {
+		printf("cd: %s: No such file or directory\n", dir);
+		return;
+	}
+	memcpy(cwd, dir_full_path, PATHS_LEN);
+	closedir(dir_f);
+}
 
-    start = buff;
-    while (*start && isspace((unsigned char) *start)) start++;
+bool execute(const char* const args[]) {
+    char *path = type(args[0], false); // type is a custom function that returns the path of the command
+	if (path == NULL) return false;
 
-    if (*start == '\0') {
-        free(command);
-        free(args);
-       return; 
-    }
+	pid_t pid = fork();
 
-    end = start;
-    while (*end && !isspace((unsigned char) *end)) end++;
-
-    size_t len = end - start + 1;
-    realloc(command, len);
-    if (!command) return;
-    memcpy(command, start, len);
-    command[len - 1] = '\0';
-
-    unsigned short i = 0;
-    while (*end != '\0') {
-        start = end;
-        while (*start && isspace((unsigned char) *start)) start++;
-        end = start;
-        while (*end && !isspace((unsigned char) *end)) end++;
-        len = end - start + 1;
-        realloc(args[i], len);
-        if (!args[i]) return;
-        memcpy(args[i], start, len);
-        args[i][len - 1] = '\0';
-    }
-
-    if (*start == '\0') return;
-
+	if (pid == -1) {
+		printf("Error executing\n");
+		return false;
+	}
+	else if (pid == 0) {
+		execv(path, (char * const*) args);
+		perror("Execution Failed\n");
+		exit(EXIT_FAILURE);
+	}
+	else {
+		int status;
+        waitpid(pid, &status, 0); 
+	}
+	return true;
 }
