@@ -23,6 +23,7 @@ char* type(const char* const comm, bool show);
 bool execute(const char* const args[]);
 void cd(char* const dir, char* cwd);
 void trans_line(char* args[], char line[]);
+void str_shift(char* dest, char* src);
 
 int main(int argc, char *argv[]) {
 	// Flush after every printf
@@ -156,12 +157,12 @@ void trans_line(char* args[], char line[]) {
 		while (!isspace(*end)) {
 			if (*end == '\\') {
 				if (end - start == 0) {
-				       	start++;
+				    start++;
 					end += 2;
 					continue;
 				}
 				*end++ = '\0';
-				strcat(start, end);
+				str_shift(start, end);
 				continue;
 			}
 			if ((*end == '\'' || *end == '"') && end - start == 0) {
@@ -172,7 +173,7 @@ void trans_line(char* args[], char line[]) {
 					return;
 				}
 				*end++ = '\0';
-				if (!isspace(*end)) strcat(start, end--);
+				if (!isspace(*end)) str_shift(start, end--);
 			}
 			else if (*end == '\'' || *end == '"') {
 				char delim = *end;
@@ -184,9 +185,9 @@ void trans_line(char* args[], char line[]) {
 					return;
 				}
 				*end++ = '\0';
-				strcat(start, tmp_s);
+				str_shift(start, tmp_s);
 				if (!isspace(*end)) {
-					strcat(start, end);
+					str_shift(start, end);
 					end -= 2;
 					*(end + strlen(end) + 1) = '\0';
 				}
@@ -198,4 +199,11 @@ void trans_line(char* args[], char line[]) {
 		args[i++] = start;
 	}
 	args[i] = NULL;
+}
+
+void str_shift(char* dest, char* src) {
+	u16 offset = strlen(src);
+	dest += strlen(dest);
+	memmove(dest, src, offset);
+	*(dest + offset) = *(dest + offset + 1) = '\0';
 }
