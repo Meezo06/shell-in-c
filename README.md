@@ -8,8 +8,14 @@ This is a simple shell/terminal beginner project (I suppose) I'm writing in C. T
 
 This is just a recommended project from [Project Based Learning](https://github.com/practical-tutorials/project-based-learning) that I found interesting and simple enough for me and can add to my software development growth, and you can find the article [here](https://brennan.io/2015/01/16/write-a-shell-in-c/).
 
-Just for pionting out, I'm not following the instructions of the online article. This is from my figuring out.
+Just for pointing out, I'm not following the instructions of the online article. This is from my figuring out.
 
-## Documentation
+## Technologies
 
-Coming soon...
+The C programming language with GCC... so far.
+
+## How to run
+
+Just install GCC (if not already installed) and type in the terminal:  
+`gcc -o shell shell.c`  
+and make sure you're in the repo directory
