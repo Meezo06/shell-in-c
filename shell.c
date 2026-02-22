@@ -7,13 +7,14 @@
 #include <sys/wait.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <readline/readline.h>
 
 typedef unsigned char u8;
 typedef unsigned short u16;
 
 // Built-in commands
 const char* const comms[] = {
-	"exit", "echo", "type", "pwd", "cd"
+	"exit", "echo", "type", "pwd", "cd", NULL
 };
 
 const char doub_quo_esc[] = {'"', '\\'};
@@ -28,6 +29,8 @@ void cd(char* const dir, char* cwd);
 void trans_line(char* args[], char line[]);
 void str_shift(char* dest, char* src);
 bool is_escapeable(char c);
+char **character_name_completion(const char *, int, int);
+char *character_name_generator(const char *, int);
 
 int main(int argc, char *argv[]) {
 	// Flush after every printf
@@ -37,15 +40,15 @@ int main(int argc, char *argv[]) {
 	char *cwd = malloc(PATHS_LEN);
 	getcwd(cwd, PATHS_LEN);
 
+	// set tab completion function
+	rl_attempted_completion_function = character_name_completion;
+
 
 	while (true) {
 		// set up and get the command input
-		printf("$ ");
-		char line[4096];
+		char* line = readline("$ ");
 		char* args[ARGS_LEN];
-		fgets(line, 4096, stdin);
 
-		line[strcspn(line, "\n")] = '\0'; // end with '\0' instead of '\n'
 		trans_line(args, line); // get the args
 
 		// match with built-in command or with executables
@@ -59,6 +62,7 @@ int main(int argc, char *argv[]) {
 			bool status = execute((const char * const*)args);
 			if (!status) printf("%s: command not found\n", args[0]);
 		}
+		free(line);
 	}
 
 	return 0;
@@ -71,9 +75,10 @@ void echo(const char* const args[]) {
 }
 
 // type to get the command executable path
-char* type(const char const *comm, bool show) {
+char* type(const char* const comm, bool show) {
+	
+	u8 comms_len = sizeof(comms) / sizeof(comms[0]) - 1; // Number of commands
 
-	u8 comms_len = sizeof(comms) / sizeof(comms[0]); // Number of commands
 	for (u16 i = 0; i < comms_len; i++) {
 		if (strcmp(comms[i], comm) == 0) {
 			printf("%s is a shell builtin\n", comm);
@@ -143,13 +148,14 @@ void cd(char* const dir, char* cwd) {
 
 // Execution of executables processes
 bool execute(const char* const args[]) {
-    char *path = type(args[0], false); // getting exe full path
+	char *path = type(args[0], false); // getting exe full path
 	if (path == NULL) return false;
 
 	pid_t pid = fork();
 
 	if (pid == -1) {
 		printf("Error executing\n");
+		free(path);
 		return false;
 	}
 	else if (pid == 0) {
@@ -161,6 +167,7 @@ bool execute(const char* const args[]) {
 		int status;
 		waitpid(pid, &status, 0); 
 	}
+	free(path);
 	return true;
 }
 
@@ -260,4 +267,25 @@ void str_shift(char* dest, char* src) {
 bool is_escapeable(char c) {
 	for (int i = 0; i < 2; i++) if (c == doub_quo_esc[i]) return true;
 	return false;
+}
+
+char **character_name_completion(const char *text, int start, int end) {
+	rl_attempted_completion_over = 1;
+	return rl_completion_matches(text, character_name_generator);
+}
+
+char *character_name_generator(const char *text, int state) {
+	static int list_index, len;
+	char *name;
+
+	if (!state) {
+		list_index = 0;
+		len = strlen(text);
+	}
+
+	while ((name = comms[list_index++])) {
+		if (strncmp(name, text, len) == 0) return strdup(name);
+	}
+
+	return NULL;
 }
