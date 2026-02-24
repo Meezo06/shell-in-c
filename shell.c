@@ -269,23 +269,59 @@ bool is_escapeable(char c) {
 	return false;
 }
 
+
+// Tab completion list
 char **character_name_completion(const char *text, int start, int end) {
-	rl_attempted_completion_over = 1;
-	return rl_completion_matches(text, character_name_generator);
+	rl_attempted_completion_over = 1; // prevnet default behavior 
+	return rl_completion_matches(text, character_name_generator); // find matches
 }
 
+
+// Tab completoin match
 char *character_name_generator(const char *text, int state) {
-	static int list_index, len;
+	static u8 list_index, len;
 	char *name;
+	static char* path_env;
+	static char* curr_dir;
+	static DIR* dir;
 
 	if (!state) {
 		list_index = 0;
 		len = strlen(text);
+		path_env = strdup(getenv("PATH"));
+		curr_dir = strtok(path_env, ":");
+		dir = opendir(curr_dir);
 	}
 
-	while ((name = comms[list_index++])) {
+	while (true) {
+		name = comms[list_index];
+		if (name == NULL) break;
+		list_index++;
 		if (strncmp(name, text, len) == 0) return strdup(name);
 	}
 
+	while (true) {
+		
+		struct dirent* dir_ent;
+		while (dir != NULL  && (dir_ent = readdir(dir)) != NULL) {
+			char exe_path[PATHS_LEN];
+			snprintf(exe_path, PATHS_LEN, "%s/%s", curr_dir, dir_ent->d_name);
+
+			if (dir_ent->d_type == DT_REG
+			&& strncmp(text, dir_ent->d_name, len) == 0
+			&& access(exe_path, X_OK) == 0) {
+				char* exe_name = strdup(dir_ent->d_name);
+				return exe_name;
+			}
+
+		}
+
+		closedir(dir);
+		curr_dir = strtok(NULL, ":");
+		if (curr_dir == NULL) break;
+		dir = opendir(curr_dir);
+	}
+
+	free(path_env);
 	return NULL;
 }
