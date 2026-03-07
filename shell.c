@@ -17,16 +17,18 @@ const char* const comms[] = {
 	"exit", "echo", "type", "pwd", "cd", NULL
 };
 
-const char doub_quo_esc[] = {'"', '\\'};
-
-const u8 ARGS_LEN = 50;
+char* cwd;
 const u16 PATHS_LEN = 512;
+const u8 PROC_LEN = 10;
+const u8 ARGS_LEN = 20;
+const char doub_quo_esc[] = {'"', '\\'}; // double quotes escapeable
 
-void echo(const char* const args[]);
-char* type(const char* const comm, bool show);
-bool execute(const char* const args[]);
-void cd(char* const dir, char* cwd);
-void trans_line(char* args[], char line[]);
+void run(char* args[][ARGS_LEN]);
+bool execute(char* args[], bool);
+void echo(char* args[]);
+char* type(char* comm, bool show);
+void cd(char* dir);
+void trans_line(char* args[][ARGS_LEN], char line[]);
 void str_shift(char* dest, char* src);
 bool is_escapeable(char c);
 char **character_name_completion(const char *, int, int);
@@ -37,7 +39,7 @@ int main(int argc, char *argv[]) {
 	setbuf(stdout, NULL);
 
 	// Stroing Directory
-	char *cwd = malloc(PATHS_LEN);
+	cwd = malloc(PATHS_LEN);
 	getcwd(cwd, PATHS_LEN);
 
 	// set tab completion function
@@ -47,35 +49,99 @@ int main(int argc, char *argv[]) {
 	while (true) {
 		// set up and get the command input
 		char* line = readline("$ ");
-		char* args[ARGS_LEN];
+		char* args[PROC_LEN][ARGS_LEN];
 
 		trans_line(args, line); // get the args
 
 		// match with built-in command or with executables
-		if (args[0] == NULL) continue;
-		if (strcmp(args[0], "exit") == 0) break;
-		else if (strcmp(args[0], "echo") == 0) echo((const char * const *)args);
-		else if (strcmp(args[0], "type") == 0) type(args[1], true);
-		else if (strcmp(args[0], "pwd") == 0) puts(cwd);
-		else if (strcmp(args[0], "cd") == 0) cd(args[1], cwd);
-		else {
-			bool status = execute((const char * const*)args);
-			if (!status) printf("%s: command not found\n", args[0]);
+		if (args[0][0] == NULL) {
+			free(line);
+			continue;
 		}
+		if (strcmp(args[0][0], "exit") == 0) break;
+		else run(args);
 		free(line);
 	}
 
 	return 0;
 }
 
-void echo(const char* const args[]) {
+inline void run(char* args[][ARGS_LEN]) {
+
+	int fds[2]; // pipe file descriptors
+	int tmpio[2]; // temprory I/O descriptors
+	u8 proc = 0;
+	bool is_last_proc = false;
+
+	pipe(tmpio);
+	dup2(0, tmpio[0]);
+	dup2(1, tmpio[1]);
+
+	while (args[proc][0] != NULL) {
+
+		if (args[proc + 1][0] != NULL) {
+			pipe(fds);
+			dup2(fds[1], 1);
+			is_last_proc = true;
+		}
+		else dup2(tmpio[1], 1);
+
+		char* command = args[proc][0];
+
+		if (strcmp("echo", command) == 0) echo(args[proc]);
+		else if (strcmp("type", command) == 0) type(args[proc][1], true);
+		else if (strcmp("pwd", command) == 0) puts(cwd);
+		else if (strcmp("cd", command) == 0) cd(args[proc][1]);
+		else {
+			bool status = execute(args[proc], is_last_proc);
+			if (!status) fprintf(stderr, "%s: command not found\n", command);
+		}
+
+		dup2(fds[0], 0);
+		close(fds[0]);
+		close(fds[1]);
+		proc++;
+	}
+
+	dup2(tmpio[0], 0);
+	close(tmpio[0]);
+	close(tmpio[1]);
+}
+
+inline bool execute(char* args[], bool is_last) {
+
+	char* path = type(args[0], false);
+	if (path == NULL) return false;
+	pid_t pid = fork();
+
+	if (pid == -1) {
+		fprintf(stderr, "Error executing\n");
+		free(path);
+		return false;
+	}
+	else if (pid == 0) {
+		execv(path, args);
+		fprintf(stderr, "Execution Failed\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (is_last) {
+		int status;
+		waitpid(pid, &status, 0);
+	}
+	
+	free(path);
+	return true;
+}
+
+void echo(char* args[]) {
 	if (args[0] == NULL) return;
 	for(u8 i = 1; args[i] != NULL; i++) printf("%s ", args[i]);
 	putc('\n', stdout);
 }
 
 // type to get the command executable path
-char* type(const char* const comm, bool show) {
+char* type(char* comm, bool show) {
 	
 	u8 comms_len = sizeof(comms) / sizeof(comms[0]) - 1; // Number of commands
 
@@ -115,13 +181,13 @@ char* type(const char* const comm, bool show) {
 		closedir(curr_dir);
 	}
 
-	if (show) printf("%s: not found\n", comm);
+	if (show) fprintf(stderr, "%s: not found\n", comm);
 	free(PATH);
 	return NULL;
 }
 
 // cd to change current directory
-void cd(char* const dir, char* cwd) {
+void cd(char* dir) {
 	const char* home = getenv("HOME"); // Home directory
 	char dir_full_path[PATHS_LEN];
 
@@ -138,7 +204,7 @@ void cd(char* const dir, char* cwd) {
 	realpath(dir_full_path, dir_full_path);
 	dir_f = opendir(dir_full_path);
 	if (dir_f == NULL) {
-		printf("cd: %s: No such file or directory\n", dir);
+		fprintf(stderr, "cd: %s: No such file or directory\n", dir);
 		return;
 	}
 
@@ -146,51 +212,38 @@ void cd(char* const dir, char* cwd) {
 	closedir(dir_f);
 }
 
-// Execution of executables processes
-bool execute(const char* const args[]) {
-	char *path = type(args[0], false); // getting exe full path
-	if (path == NULL) return false;
-
-	pid_t pid = fork();
-
-	if (pid == -1) {
-		printf("Error executing\n");
-		free(path);
-		return false;
-	}
-	else if (pid == 0) {
-		execv(path, (char * const*) args);
-		perror("Execution Failed\n");
-		exit(EXIT_FAILURE);
-	}
-	else {
-		int status;
-		waitpid(pid, &status, 0); 
-	}
-	free(path);
-	return true;
-}
-
 // Arguments handling
-void trans_line(char* args[], char line[]) {
-	args[0] = NULL;
+void trans_line(char* args[][ARGS_LEN], char line[]) {
+	args[0][0] = NULL;
 	char* start = line;
-	u8 i = 0; 
+	u8 i = 0;
+	u8 proc = 0; // processes
 	char* end = start;
 
-	while (*end != '\0') {
+	while (true) {
 		// Null terminate spaces
 		while (isspace(*end)) *end++ = '\0'; 
-		if (*end == '\0') break;
+		if (*end == '\0') {
+			args[proc++][i] = NULL;
+			args[proc][0] = NULL;
+			break;
+		}
 
 		// Iterating over argument chars
 		start = end;
 		while (!isspace(*end)) {
 
+			// handling pipes
+			if (*end == '|') {
+				start = NULL;
+				end++;
+				break;
+			}
+
 			if (*end == '\\') {
 
 				if (end - start == 0) {
-				    start++;
+					start++;
 					end += 2;
 					continue;
 				}
@@ -206,8 +259,8 @@ void trans_line(char* args[], char line[]) {
 
 				while (*++end != delim) {
 				       	if (*end == '\0') {
-					printf("Format error\n");
-					args[0] = NULL;
+					fprintf(stderr, "Format error\n");
+					args[0][0] = NULL;
 					return;
 					}
 					if (*end == '\\' && delim == '"' && is_escapeable(*(end + 1))) {
@@ -225,8 +278,8 @@ void trans_line(char* args[], char line[]) {
 
 				while (*++end != delim) { 
 					if (*end == '\0') {
-					printf("Format error\n");
-					args[0] = NULL;
+					fprintf(stderr, "Format error\n");
+					args[0][0] = NULL;
 					return;
 					}
 					if (*end == '\\' && delim == '"' && is_escapeable(*(end + 1))) {
@@ -250,10 +303,14 @@ void trans_line(char* args[], char line[]) {
 			}
 		}
 
-		args[i++] = start;
+		args[proc][i++] = start;
+
+		if (start == NULL) {
+			i = 0;
+			proc++;
+		}
 	}
 
-	args[i] = NULL;
 }
 
 // custom strcat() for overlapped strings
@@ -279,11 +336,11 @@ char **character_name_completion(const char *text, int start, int end) {
 
 // Tab completoin match
 char *character_name_generator(const char *text, int state) {
-	static u8 list_index, len;
 	char *name;
 	static char* path_env;
 	static char* curr_dir;
 	static DIR* dir;
+	static u8 list_index, len;
 
 	if (!state) {
 		list_index = 0;
