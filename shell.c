@@ -8,13 +8,14 @@
 #include <stdbool.h>
 #include <ctype.h>
 #include <readline/readline.h>
+#include <readline/history.h>
 
 typedef unsigned char u8;
 typedef unsigned short u16;
 
 // Built-in commands
 const char* const comms[] = {
-	"exit", "echo", "type", "pwd", "cd", NULL
+	"exit", "echo", "type", "pwd", "cd", "history", NULL
 };
 
 char* cwd;
@@ -33,6 +34,7 @@ void str_shift(char* dest, char* src);
 bool is_escapeable(char c);
 char **character_name_completion(const char *, int, int);
 char *character_name_generator(const char *, int);
+void history(void);
 
 int main(int argc, char *argv[]) {
 	// Flush after every printf
@@ -45,10 +47,13 @@ int main(int argc, char *argv[]) {
 	// set tab completion function
 	rl_attempted_completion_function = character_name_completion;
 
+	// begin session to use the history "readline/history" functions
+	using_history();
 
 	while (true) {
 		// set up and get the command input
 		char* line = readline("$ ");
+		add_history(line);
 		char* args[PROC_LEN][ARGS_LEN];
 
 		trans_line(args, line); // get the args
@@ -92,6 +97,7 @@ inline void run(char* args[][ARGS_LEN]) {
 		else if (strcmp("type", command) == 0) type(args[proc][1], true);
 		else if (strcmp("pwd", command) == 0) puts(cwd);
 		else if (strcmp("cd", command) == 0) cd(args[proc][1]);
+		else if (strcmp("history", command) == 0) history();
 		else {
 			bool status = execute(args[proc], is_last_proc);
 			if (!status) fprintf(stderr, "%s: command not found\n", command);
@@ -132,6 +138,15 @@ inline bool execute(char* args[], bool is_last) {
 	
 	free(path);
 	return true;
+}
+
+void history() {
+
+	HIST_ENTRY** list = history_list();
+	if (list == NULL) return;
+	u16 i = 0;
+
+	while (list[i] != NULL) printf("%d %s\n", i++, list[i]->line);
 }
 
 void echo(char* args[]) {
