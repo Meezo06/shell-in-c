@@ -16,6 +16,6 @@ The C programming language with GCC... so far.
 
 ## How to run
 
-Just install GCC (if not already installed) and type in the terminal:  
-`gcc -o shell shell.c`  
-and make sure you're in the repo directory
+Make sure GCC is installed and run:  
+`./MakeFile`  
+An executable will be inside the "build/" directory

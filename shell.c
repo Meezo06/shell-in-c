@@ -34,7 +34,7 @@ void str_shift(char* dest, char* src);
 bool is_escapeable(char c);
 char **character_name_completion(const char *, int, int);
 char *character_name_generator(const char *, int);
-void history(void);
+void history(char*);
 
 int main(int argc, char *argv[]) {
 	// Flush after every printf
@@ -97,7 +97,7 @@ inline void run(char* args[][ARGS_LEN]) {
 		else if (strcmp("type", command) == 0) type(args[proc][1], true);
 		else if (strcmp("pwd", command) == 0) puts(cwd);
 		else if (strcmp("cd", command) == 0) cd(args[proc][1]);
-		else if (strcmp("history", command) == 0) history();
+		else if (strcmp("history", command) == 0) history(args[proc][1]);
 		else {
 			bool status = execute(args[proc], is_last_proc);
 			if (!status) fprintf(stderr, "%s: command not found\n", command);
@@ -140,13 +140,22 @@ inline bool execute(char* args[], bool is_last) {
 	return true;
 }
 
-void history() {
+void history(char* arg) {
+
+	short num;
+	if (arg) {
+		num = (short) atoi(arg);
+		if (num < 0) {
+		       	fprintf(stderr, "Invalid argument \"%c\"", arg);
+			return;
+		}
+	}
 
 	HIST_ENTRY** list = history_list();
 	if (list == NULL) return;
-	u16 i = 0;
+	u16 i = (arg != NULL) * (history_length - num);
 
-	while (list[i] != NULL) printf("%d %s\n", i++, list[i]->line);
+	while (list[i] != NULL) printf("%d %s\n", i++ + 1, list[i]->line);
 }
 
 void echo(char* args[]) {
