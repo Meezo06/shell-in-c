@@ -19,6 +19,7 @@ const char* const comms[] = {
 };
 
 char* cwd;
+const char* hfile = getenv("HISTFILE");
 const u16 PATHS_LEN = 512;
 const u8 PROC_LEN = 10;
 const u8 ARGS_LEN = 20;
@@ -34,7 +35,7 @@ void str_shift(char* dest, char* src);
 bool is_escapeable(char c);
 char **character_name_completion(const char *, int, int);
 char *character_name_generator(const char *, int);
-void history(char*);
+void history(char* []);
 
 int main(int argc, char *argv[]) {
 	// Flush after every printf
@@ -48,7 +49,10 @@ int main(int argc, char *argv[]) {
 	rl_attempted_completion_function = character_name_completion;
 
 	// begin session to use the history "readline/history" functions
-	using_history();
+	using_history(hfile);
+
+	// load history on startup
+	read_history();
 
 	while (true) {
 		// set up and get the command input
@@ -67,6 +71,9 @@ int main(int argc, char *argv[]) {
 		else run(args);
 		free(line);
 	}
+
+	// append history on exit
+	append_history(hfile);
 
 	return 0;
 }
@@ -140,20 +147,26 @@ inline bool execute(char* args[], bool is_last) {
 	return true;
 }
 
-void history(char* arg) {
+void history(char* args[]) {
 
-	short num;
-	if (arg) {
-		num = (short) atoi(arg);
-		if (num < 0) {
-		       	fprintf(stderr, "Invalid argument \"%c\"", arg);
-			return;
+	short num = 0;
+	for (u8 i = 1; args[i] != NULL; i++) {
+		if (strcmp(args[i], "-r") == 0) read_history(args[++i]);
+		else if (strcmp(args[i], "-w") == 0) write_history(args[++i]);
+		else if (strcmp(args[i], "-a") == 0) append_history(args[++i]);
+		else {
+			if (strcmp(args[i], "0") == 0) continue;
+			num = (short) atoi(arg);
+			if (num <= 0) {
+		       		fprintf(stderr, "Invalid argument \"%c\"", arg);
+				return;
+			}
 		}
 	}
 
 	HIST_ENTRY** list = history_list();
 	if (list == NULL) return;
-	u16 i = (arg != NULL) * (history_length - num);
+	u16 i = (num != 0) * (history_length - num);
 
 	while (list[i] != NULL) printf("%d %s\n", i++ + 1, list[i]->line);
 }
