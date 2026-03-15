@@ -19,7 +19,7 @@ const char* const comms[] = {
 };
 
 char* cwd;
-const char* hfile = getenv("HISTFILE");
+char* hfile;
 const u16 PATHS_LEN = 512;
 const u8 PROC_LEN = 10;
 const u8 ARGS_LEN = 20;
@@ -45,15 +45,18 @@ int main(int argc, char *argv[]) {
 	cwd = malloc(PATHS_LEN);
 	getcwd(cwd, PATHS_LEN);
 
+	// set history filename
+	hfile = getenv("HISTFILE");
+
 	// set tab completion function
 	rl_attempted_completion_function = character_name_completion;
 
 	// begin session to use the history "readline/history" functions
-	using_history(hfile);
+	using_history();
 
 	// load history on startup
-	read_history();
-
+	read_history(hfile);
+	
 	while (true) {
 		// set up and get the command input
 		char* line = readline("$ ");
@@ -73,7 +76,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	// append history on exit
-	append_history(hfile);
+	append_history(history_length, hfile);
 
 	return 0;
 }
@@ -104,7 +107,7 @@ inline void run(char* args[][ARGS_LEN]) {
 		else if (strcmp("type", command) == 0) type(args[proc][1], true);
 		else if (strcmp("pwd", command) == 0) puts(cwd);
 		else if (strcmp("cd", command) == 0) cd(args[proc][1]);
-		else if (strcmp("history", command) == 0) history(args[proc][1]);
+		else if (strcmp("history", command) == 0) history(args[proc]);
 		else {
 			bool status = execute(args[proc], is_last_proc);
 			if (!status) fprintf(stderr, "%s: command not found\n", command);
@@ -151,14 +154,14 @@ void history(char* args[]) {
 
 	short num = 0;
 	for (u8 i = 1; args[i] != NULL; i++) {
-		if (strcmp(args[i], "-r") == 0) read_history(args[++i]);
-		else if (strcmp(args[i], "-w") == 0) write_history(args[++i]);
-		else if (strcmp(args[i], "-a") == 0) append_history(args[++i]);
+		if (strcmp(args[i], "-r") == 0) read_history(hfile), i++;
+		else if (strcmp(args[i], "-w") == 0) write_history(hfile), i++;
+		else if (strcmp(args[i], "-a") == 0) append_history(history_length, hfile), i++;
 		else {
 			if (strcmp(args[i], "0") == 0) continue;
-			num = (short) atoi(arg);
+			num = (short) atoi(args[i]);
 			if (num <= 0) {
-		       		fprintf(stderr, "Invalid argument \"%c\"", arg);
+		       		fprintf(stderr, "Invalid argument \"%c\"", args[i]);
 				return;
 			}
 		}
