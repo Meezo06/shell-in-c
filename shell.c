@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <fcntl.h>
 
 typedef unsigned char u8;
 typedef unsigned short u16;
@@ -36,6 +37,7 @@ bool is_escapeable(char c);
 char **character_name_completion(const char *, int, int);
 char *character_name_generator(const char *, int);
 void history(char* []);
+bool look_string(char* [], char*, u8*);
 
 int main(int argc, char *argv[]) {
 	// Flush after every printf
@@ -46,7 +48,11 @@ int main(int argc, char *argv[]) {
 	getcwd(cwd, PATHS_LEN);
 
 	// set history filename
-	hfile = getenv("HISTFILE");
+	const char* home = getenv("HOME");
+	const u8 home_len = strlen(home);
+	hfile = malloc(home_len + 15);
+	strcpy(hfile, home);
+	strcat(hfile, "/.bash_history");
 
 	// set tab completion function
 	rl_attempted_completion_function = character_name_completion;
@@ -56,7 +62,7 @@ int main(int argc, char *argv[]) {
 
 	// load history on startup
 	read_history(hfile);
-	
+
 	while (true) {
 		// set up and get the command input
 		char* line = readline("$ ");
@@ -89,17 +95,40 @@ inline void run(char* args[][ARGS_LEN]) {
 	bool is_last_proc = false;
 
 	pipe(tmpio);
-	dup2(0, tmpio[0]);
-	dup2(1, tmpio[1]);
+	dup2(STDIN_FILENO, tmpio[0]);
+	dup2(STDOUT_FILENO, tmpio[1]);
 
 	while (args[proc][0] != NULL) {
 
 		if (args[proc + 1][0] != NULL) {
 			pipe(fds);
-			dup2(fds[1], 1);
+			dup2(fds[1], STDOUT_FILENO);
+		}
+		else {
+		       	dup2(tmpio[1], STDOUT_FILENO);
 			is_last_proc = true;
 		}
-		else dup2(tmpio[1], 1);
+			
+		u8 rein; // redirector index
+		int file = -1;
+		if (look_string(args[proc], ">", &rein)
+		|| look_string(args[proc], "1>", &rein)) {
+
+			if (rein == 0
+			|| args[proc][rein + 1] == NULL
+			|| args[proc][rein + 2] != NULL) {
+				fprintf(stderr, "Faulty redirection format\n");
+				close(fds[0]);
+				close(fds[1]);
+				dup2(tmpio[1], STDOUT_FILENO);
+				dup2(tmpio[0], STDIN_FILENO);
+				break;
+			}	
+			
+			file = open(args[proc][rein + 1], O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+			dup2(file, STDOUT_FILENO);
+			args[proc][rein] = NULL;
+		}
 
 		char* command = args[proc][0];
 
@@ -116,6 +145,7 @@ inline void run(char* args[][ARGS_LEN]) {
 		dup2(fds[0], 0);
 		close(fds[0]);
 		close(fds[1]);
+		close(file);
 		proc++;
 	}
 
@@ -366,6 +396,16 @@ bool is_escapeable(char c) {
 	return false;
 }
 
+bool look_string(char* sts[], char* str, u8* index) {
+	for (u8 i = 0; sts[i] != NULL; i++) {
+		if (strcmp(sts[i], str) == 0) {
+			*index = i;
+		       	return true;
+		}
+	}
+	*index = 0;
+	return false;
+}
 
 // Tab completion list
 char **character_name_completion(const char *text, int start, int end) {
