@@ -19,11 +19,11 @@ const char* const comms[] = {
 	"exit", "echo", "type", "pwd", "cd", "history", NULL
 };
 
+#define PATHS_LEN 512
+#define PROC_LEN 10
+#define ARGS_LEN 20
 char* cwd;
 char* hfile;
-const u16 PATHS_LEN = 512;
-const u8 PROC_LEN = 10;
-const u8 ARGS_LEN = 20;
 const char doub_quo_esc[] = {'"', '\\'}; // double quotes escapeable
 
 void run(char* args[][ARGS_LEN]);
@@ -66,16 +66,15 @@ int main(int argc, char *argv[]) {
 	while (true) {
 		// set up and get the command input
 		char* line = readline("$ ");
+		if (args[0][0] == NULL) {
+			free(line);
+			continue;
+		}
 		add_history(line);
 		char* args[PROC_LEN][ARGS_LEN];
 
 		trans_line(args, line); // get the args
 
-		// match with built-in command or with executables
-		if (args[0][0] == NULL) {
-			free(line);
-			continue;
-		}
 		if (strcmp(args[0][0], "exit") == 0) break;
 		else run(args);
 		free(line);
@@ -91,12 +90,15 @@ inline void run(char* args[][ARGS_LEN]) {
 
 	int fds[2]; // pipe file descriptors
 	int tmpio[2]; // temprory I/O descriptors
+	int tmperr[2];
 	u8 proc = 0;
 	bool is_last_proc = false;
 
 	pipe(tmpio);
+	pipe(tmperr);
 	dup2(STDIN_FILENO, tmpio[0]);
 	dup2(STDOUT_FILENO, tmpio[1]);
+	dup2(STDERR_FILENO, tmperr[1]);
 
 	while (args[proc][0] != NULL) {
 
@@ -112,23 +114,26 @@ inline void run(char* args[][ARGS_LEN]) {
 		u8 rein; // redirector index
 		int file = -1;
 		if (look_string(args[proc], ">", &rein)
-		|| look_string(args[proc], "1>", &rein)) {
+		|| look_string(args[proc], "1>", &rein)
+		|| look_string(args[proc], "2>", &rein)) {
 
-			if (rein == 0
-			|| args[proc][rein + 1] == NULL
+			if (args[proc][rein + 1] == NULL
 			|| args[proc][rein + 2] != NULL) {
 				fprintf(stderr, "Faulty redirection format\n");
 				close(fds[0]);
 				close(fds[1]);
 				dup2(tmpio[1], STDOUT_FILENO);
 				dup2(tmpio[0], STDIN_FILENO);
+				dup2(tmperr[1], STDERR_FILENO);
 				break;
 			}	
 			
 			file = open(args[proc][rein + 1], O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-			dup2(file, STDOUT_FILENO);
+			if (strcmp(args[proc][rein], "2>") == 0) dup2(file, STDERR_FILENO);
+			else dup2(file, STDOUT_FILENO);
 			args[proc][rein] = NULL;
 		}
+
 
 		char* command = args[proc][0];
 
@@ -142,16 +147,19 @@ inline void run(char* args[][ARGS_LEN]) {
 			if (!status) fprintf(stderr, "%s: command not found\n", command);
 		}
 
-		dup2(fds[0], 0);
+		dup2(fds[0], STDIN_FILENO);
 		close(fds[0]);
 		close(fds[1]);
 		close(file);
 		proc++;
 	}
 
-	dup2(tmpio[0], 0);
+	dup2(tmpio[0], STDIN_FILENO);
+	dup2(tmperr[1], STDERR_FILENO);
 	close(tmpio[0]);
 	close(tmpio[1]);
+	close(tmperr[0]);
+	close(tmperr[1]);
 }
 
 inline bool execute(char* args[], bool is_last) {
@@ -180,6 +188,7 @@ inline bool execute(char* args[], bool is_last) {
 	return true;
 }
 
+// TODO: fix and optimize
 void history(char* args[]) {
 
 	short num = 0;
@@ -210,7 +219,7 @@ void echo(char* args[]) {
 	putc('\n', stdout);
 }
 
-// type to get the command executable path
+// TODO: support multi-arguments
 char* type(char* comm, bool show) {
 	
 	u8 comms_len = sizeof(comms) / sizeof(comms[0]) - 1; // Number of commands
@@ -256,7 +265,6 @@ char* type(char* comm, bool show) {
 	return NULL;
 }
 
-// cd to change current directory
 void cd(char* dir) {
 	const char* home = getenv("HOME"); // Home directory
 	char dir_full_path[PATHS_LEN];
@@ -397,13 +405,12 @@ bool is_escapeable(char c) {
 }
 
 bool look_string(char* sts[], char* str, u8* index) {
-	for (u8 i = 0; sts[i] != NULL; i++) {
+	for (u8 i = 1; sts[i] != NULL; i++) {
 		if (strcmp(sts[i], str) == 0) {
 			*index = i;
 		       	return true;
 		}
 	}
-	*index = 0;
 	return false;
 }
 
