@@ -29,7 +29,8 @@ const char doub_quo_esc[] = {'"', '\\'}; // double quotes escapeable
 void run(char* args[][ARGS_LEN]);
 bool execute(char* args[], bool);
 void echo(char* args[]);
-char* type(char* comm, bool show);
+char* get_type(char*, bool);
+void type(char* args[], bool show);
 void cd(char* dir);
 void trans_line(char* args[][ARGS_LEN], char line[]);
 void str_shift(char* dest, char* src);
@@ -63,17 +64,20 @@ int main(int argc, char *argv[]) {
 	// load history on startup
 	read_history(hfile);
 
+	// arguments allocate
+	char* args[PROC_LEN][ARGS_LEN];
+
 	while (true) {
 		// set up and get the command input
 		char* line = readline("$ ");
+		trans_line(args, line); // get the args
+
 		if (args[0][0] == NULL) {
 			free(line);
 			continue;
 		}
-		add_history(line);
-		char* args[PROC_LEN][ARGS_LEN];
 
-		trans_line(args, line); // get the args
+		add_history(line);
 
 		if (strcmp(args[0][0], "exit") == 0) break;
 		else run(args);
@@ -138,7 +142,7 @@ inline void run(char* args[][ARGS_LEN]) {
 		char* command = args[proc][0];
 
 		if (strcmp("echo", command) == 0) echo(args[proc]);
-		else if (strcmp("type", command) == 0) type(args[proc][1], true);
+		else if (strcmp("type", command) == 0) type(args[proc], true);
 		else if (strcmp("pwd", command) == 0) puts(cwd);
 		else if (strcmp("cd", command) == 0) cd(args[proc][1]);
 		else if (strcmp("history", command) == 0) history(args[proc]);
@@ -163,9 +167,10 @@ inline void run(char* args[][ARGS_LEN]) {
 }
 
 inline bool execute(char* args[], bool is_last) {
-
-	char* path = type(args[0], false);
-	if (path == NULL) return false;
+		
+	char* path = get_type(args[0], false);
+	if (path == NULL) return false
+		;
 	pid_t pid = fork();
 
 	if (pid == -1) {
@@ -219,9 +224,7 @@ void echo(char* args[]) {
 	putc('\n', stdout);
 }
 
-// TODO: support multi-arguments
-char* type(char* comm, bool show) {
-	
+char* get_type(char* comm, bool show) {
 	u8 comms_len = sizeof(comms) / sizeof(comms[0]) - 1; // Number of commands
 
 	for (u16 i = 0; i < comms_len; i++) {
@@ -263,6 +266,14 @@ char* type(char* comm, bool show) {
 	if (show) fprintf(stderr, "%s: not found\n", comm);
 	free(PATH);
 	return NULL;
+	
+}
+
+void type(char* args[], bool show) {
+	for (int i = 1; args[i] != NULL; i++) {
+		char* comm = args[i];
+		get_type(comm, true);
+	}
 }
 
 void cd(char* dir) {

@@ -17,5 +17,5 @@ The C programming language with GCC... so far.
 ## How to run
 
 Make sure GCC is installed and run:  
-`./MakeFile`  
+`./build-run`  
 An executable will be inside the "build/" directory

@@ -1,5 +1,0 @@
-#!/bin/bash
-
-gcc -o build/shell -lreadline -lncurses shell.c &> errors
-exec ./build/shell
-
