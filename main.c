@@ -62,7 +62,7 @@ int main(int argc, char *argv[]) {
 	using_history();
 
 	// load history on startup
-	read_history(hfile);
+	// read_history(hfile);
 
 	// arguments allocate
 	char* args[PROC_LEN][ARGS_LEN];
@@ -70,22 +70,25 @@ int main(int argc, char *argv[]) {
 	while (true) {
 		// set up and get the command input
 		char* line = readline("$ ");
+		char* buff_line = strdup(line);
 		trans_line(args, line); // get the args
 
 		if (args[0][0] == NULL) {
 			free(line);
+			free(buff_line);
 			continue;
 		}
 
-		add_history(line);
+		add_history(buff_line);
 
 		if (strcmp(args[0][0], "exit") == 0) break;
 		else run(args);
 		free(line);
+		free(buff_line);
 	}
 
 	// append history on exit
-	append_history(history_length, hfile);
+	// append_history(history_length, hfile);
 
 	return 0;
 }
@@ -197,17 +200,14 @@ inline bool execute(char* args[], bool is_last) {
 void history(char* args[]) {
 
 	short num = 0;
-	for (u8 i = 1; args[i] != NULL; i++) {
-		if (strcmp(args[i], "-r") == 0) read_history(hfile), i++;
-		else if (strcmp(args[i], "-w") == 0) write_history(hfile), i++;
-		else if (strcmp(args[i], "-a") == 0) append_history(history_length, hfile), i++;
-		else {
-			if (strcmp(args[i], "0") == 0) continue;
-			num = (short) atoi(args[i]);
-			if (num <= 0) {
-		       		fprintf(stderr, "Invalid argument \"%c\"", args[i]);
-				return;
-			}
+	if (strcmp(args[1], "-r") == 0) read_history(args[2]), num = history_length;
+	else if (strcmp(args[1], "-w") == 0) write_history(args[2]), num = history_length;
+	else if (strcmp(args[1], "-a") == 0) append_history(history_length, args[2]), num = history_length;
+	else {
+		num = atoi(args[1]);
+		if (num <= 0) {
+	       		fprintf(stderr, "Invalid argument \"%c\"", args[1]);
+			return;
 		}
 	}
 
@@ -220,7 +220,10 @@ void history(char* args[]) {
 
 void echo(char* args[]) {
 	if (args[0] == NULL) return;
-	for(u8 i = 1; args[i] != NULL; i++) printf("%s ", args[i]);
+	for(u8 i = 1; args[i] != NULL; i++) {
+		if (args[i + 1] == NULL) printf("%s", args[i]);
+		else printf("%s ", args[i]);
+	}
 	putc('\n', stdout);
 }
 
@@ -302,7 +305,7 @@ void cd(char* dir) {
 }
 
 // Arguments handling
-void trans_line(char* args[][ARGS_LEN], char line[]) {
+void trans_line(char* args[][ARGS_LEN], char* line) {
 	args[0][0] = NULL;
 	char* start = line;
 	u8 i = 0;
@@ -388,7 +391,8 @@ void trans_line(char* args[][ARGS_LEN], char line[]) {
 
 			}
 			else {
-				if (*end++ == '\0') break;
+				if (*end == '\0') break;
+				end++;
 			}
 		}
 

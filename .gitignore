@@ -1,2 +1,4 @@
+.gitignore
 build/
 errors
+codecrafters-shell-c/
