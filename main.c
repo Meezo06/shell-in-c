@@ -199,12 +199,25 @@ inline bool execute(char* args[], bool is_last) {
 // TODO: fix and optimize
 void history(char* args[]) {
 
-	short num = 0;
-	if (strcmp(args[1], "-r") == 0) read_history(args[2]), num = history_length;
-	else if (strcmp(args[1], "-w") == 0) write_history(args[2]), num = history_length;
-	else if (strcmp(args[1], "-a") == 0) append_history(history_length, args[2]), num = history_length;
+	short num;
+
+	if (args[1] == NULL) num = 0;
+	else if (strcmp(args[1], "-r") == 0) {
+		read_history(args[2]); 
+		return;
+	}
+	else if (strcmp(args[1], "-w") == 0) {
+	       	write_history(args[2]);
+	       	return;
+	}
+	else if (strcmp(args[1], "-a") == 0) {
+		append_history(history_length - where_history(), args[2]);
+		history_set_pos(history_length - 1);
+	       	return;
+	}
 	else {
 		num = atoi(args[1]);
+
 		if (num <= 0) {
 	       		fprintf(stderr, "Invalid argument \"%c\"", args[1]);
 			return;
