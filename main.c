@@ -25,6 +25,7 @@ const char* const comms[] = {
 char* cwd;
 char* hfile;
 const char doub_quo_esc[] = {'"', '\\'}; // double quotes escapeable
+int* h_append_offset;
 
 void run(char* args[][ARGS_LEN]);
 bool execute(char* args[], bool);
@@ -49,20 +50,18 @@ int main(int argc, char *argv[]) {
 	getcwd(cwd, PATHS_LEN);
 
 	// set history filename
-	const char* home = getenv("HOME");
-	const u8 home_len = strlen(home);
-	hfile = malloc(home_len + 15);
-	strcpy(hfile, home);
-	strcat(hfile, "/.bash_history");
+	hfile = getenv("HISTFILE");
 
 	// set tab completion function
 	rl_attempted_completion_function = character_name_completion;
 
 	// begin session to use the history "readline/history" functions
 	using_history();
+	int append_offset = 0;
+	h_append_offset = &append_offset;
 
 	// load history on startup
-	// read_history(hfile);
+	read_history(hfile);
 
 	// arguments allocate
 	char* args[PROC_LEN][ARGS_LEN];
@@ -88,7 +87,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	// append history on exit
-	// append_history(history_length, hfile);
+	 write_history(hfile);
 
 	return 0;
 }
@@ -196,7 +195,6 @@ inline bool execute(char* args[], bool is_last) {
 	return true;
 }
 
-// TODO: fix and optimize
 void history(char* args[]) {
 
 	short num;
@@ -211,8 +209,8 @@ void history(char* args[]) {
 	       	return;
 	}
 	else if (strcmp(args[1], "-a") == 0) {
-		append_history(history_length - where_history(), args[2]);
-		history_set_pos(history_length - 1);
+		append_history(history_length - *h_append_offset, args[2]);
+		*h_append_offset = history_length;	
 	       	return;
 	}
 	else {
