@@ -117,25 +117,32 @@ inline void run(char* args[][ARGS_LEN]) {
 			is_last_proc = true;
 		}
 			
-		u8 rein; // redirector index
+		u8 rein = 0; // redirector index
 		int file = -1;
 		if (look_string(args[proc], ">", &rein)
 		|| look_string(args[proc], "1>", &rein)
-		|| look_string(args[proc], "2>", &rein)) {
+		|| look_string(args[proc], "2>", &rein)
+		|| look_string(args[proc], ">>", &rein)
+		|| look_string(args[proc], "1>>", &rein)
+		|| look_string(args[proc], "2>>", &rein)) {
 
 			if (args[proc][rein + 1] == NULL
 			|| args[proc][rein + 2] != NULL) {
 				fprintf(stderr, "Faulty redirection format\n");
 				close(fds[0]);
 				close(fds[1]);
-				dup2(tmpio[1], STDOUT_FILENO);
-				dup2(tmpio[0], STDIN_FILENO);
-				dup2(tmperr[1], STDERR_FILENO);
 				break;
-			}	
+			}
 			
-			file = open(args[proc][rein + 1], O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-			if (strcmp(args[proc][rein], "2>") == 0) dup2(file, STDERR_FILENO);
+			mode_t file_perms = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+			char* redi = args[proc][rein]; // redirector
+
+			if (strcmp(redi, ">") == 0 || strcmp(redi, "1>") == 0 || strcmp(redi, "2>") == 0) {
+				file = open(args[proc][rein + 1], O_WRONLY | O_CREAT, file_perms);
+			}
+			else file = open(args[proc][rein + 1], O_WRONLY | O_APPEND | O_CREAT, file_perms);
+
+			if (strcmp(redi, "2>") == 0 || strcmp(redi, "2>>") == 0) dup2(file, STDERR_FILENO);
 			else dup2(file, STDOUT_FILENO);
 			args[proc][rein] = NULL;
 		}
@@ -153,6 +160,7 @@ inline void run(char* args[][ARGS_LEN]) {
 			if (!status) fprintf(stderr, "%s: command not found\n", command);
 		}
 
+		if (rein != 0) dup2(tmpio[1], STDOUT_FILENO);
 		dup2(fds[0], STDIN_FILENO);
 		close(fds[0]);
 		close(fds[1]);
