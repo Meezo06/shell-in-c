@@ -31,7 +31,7 @@ void run(char* args[][ARGS_LEN]);
 bool execute(char* args[], bool);
 void echo(char* args[]);
 char* get_type(char*, bool);
-void type(char* args[], bool show);
+void type(char* args[]);
 void cd(char* dir);
 void trans_line(char* args[][ARGS_LEN], char line[]);
 void str_shift(char* dest, char* src);
@@ -151,7 +151,7 @@ inline void run(char* args[][ARGS_LEN]) {
 		char* command = args[proc][0];
 
 		if (strcmp("echo", command) == 0) echo(args[proc]);
-		else if (strcmp("type", command) == 0) type(args[proc], true);
+		else if (strcmp("type", command) == 0) type(args[proc]);
 		else if (strcmp("pwd", command) == 0) puts(cwd);
 		else if (strcmp("cd", command) == 0) cd(args[proc][1]);
 		else if (strcmp("history", command) == 0) history(args[proc]);
@@ -179,8 +179,8 @@ inline void run(char* args[][ARGS_LEN]) {
 inline bool execute(char* args[], bool is_last) {
 		
 	char* path = get_type(args[0], false);
-	if (path == NULL) return false
-		;
+	if (path == NULL) return false;
+
 	pid_t pid = fork();
 
 	if (pid == -1) {
@@ -291,7 +291,7 @@ char* get_type(char* comm, bool show) {
 	
 }
 
-void type(char* args[], bool show) {
+void type(char* args[]) {
 	for (int i = 1; args[i] != NULL; i++) {
 		char* comm = args[i];
 		get_type(comm, true);
@@ -299,28 +299,10 @@ void type(char* args[], bool show) {
 }
 
 void cd(char* dir) {
-	const char* home = getenv("HOME"); // Home directory
 	char dir_full_path[PATHS_LEN];
-
-	DIR *dir_f;
-	if (*dir != '/') {
-		if (*dir == '~') {
-			strcpy(dir_full_path, home);
-			strcat(dir_full_path, dir + 1);
-		} 
-		else snprintf(dir_full_path, PATHS_LEN, "%s/%s", cwd, dir);
-	}
-	else strcpy(dir_full_path, dir);
-
-	realpath(dir_full_path, dir_full_path);
-	dir_f = opendir(dir_full_path);
-	if (dir_f == NULL) {
-		fprintf(stderr, "cd: %s: No such file or directory\n", dir);
-		return;
-	}
-
+	realpath(dir, dir_full_path);
 	memcpy(cwd, dir_full_path, PATHS_LEN);
-	closedir(dir_f);
+	setenv("PWD", dir_full_path, true);
 }
 
 // Arguments handling
