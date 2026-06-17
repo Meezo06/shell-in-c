@@ -10,6 +10,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <fcntl.h>
+#include <threads.h>
 
 typedef unsigned char u8;
 typedef unsigned short u16;
@@ -40,6 +41,7 @@ char **character_name_completion(const char *, int, int);
 char *character_name_generator(const char *, int);
 void history(char* []);
 bool look_string(char* [], char*, u8*);
+int sync_tab_completion(void*);
 
 int main(int argc, char *argv[]) {
 	// Flush after every printf
@@ -51,9 +53,6 @@ int main(int argc, char *argv[]) {
 
 	// set history filename
 	hfile = getenv("HISTFILE");
-
-	// set tab completion function
-	rl_attempted_completion_function = character_name_completion;
 
 	// begin session to use the history "readline/history" functions
 	using_history();
@@ -67,8 +66,13 @@ int main(int argc, char *argv[]) {
 	char* args[PROC_LEN][ARGS_LEN];
 
 	while (true) {
+		// set up the tab completion synchronizer thread (commmand/filename completion)
+		thrd_t t_id;
+		thrd_create(&t_id, sync_tab_completion, NULL);
+
 		// set up and get the command input
 		char* line = readline("$ ");
+		thrd_detach(t_id);
 		char* buff_line = strdup(line);
 		trans_line(args, line); // get the args
 
@@ -484,4 +488,17 @@ char *character_name_generator(const char *text, int state) {
 
 	free(path_env);
 	return NULL;
+}
+
+int sync_tab_completion(void* none) {
+	char* s = rl_line_buffer;
+	while(true) {
+		if (!isspace(*s)) {
+			if (strchr(s, ' ') == NULL) rl_attempted_completion_function = character_name_completion;
+			else rl_attempted_completion_function = NULL;
+			s = rl_line_buffer;
+			continue;
+		}
+		s++;
+	}
 }
